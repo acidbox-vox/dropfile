@@ -205,12 +205,12 @@
             <h3>⚙️ ตั้งค่าการเชื่อมต่อ Supabase</h3>
             <div class="grid-2">
                 <div class="grid-cell">
-                    <label for="supabase-url">https://hsbxobbvxvakrtbqhvgx.supabase.co</label>
-                    <input type="text" id="supabase-url" placeholder="https://xyz.supabase.co">
+                    <label for="supabase-url">Supabase URL</label>
+                    <input type="text" id="supabase-url" placeholder="https://xyz.supabase.co" value="https://hsbxobbvxvakrtbqhvgx.supabase.co">
                 </div>
                 <div class="grid-cell">
-                    <label for="supabase-key">sb_publishable_BiO61FeG7BuQaV8UuRqxGQ_0uMWR05p</label>
-                    <input type="password" id="supabase-key" placeholder="ใส่รหัส Anon Key ที่นี่">
+                    <label for="supabase-key">Supabase Anon Key</label>
+                    <input type="password" id="supabase-key" placeholder="ใส่รหัส Anon Key ที่นี่" value="sb_publishable_BiO61FeG7BuQaV8UuRqxGQ_0uMWR05p">
                 </div>
             </div>
         </div>
@@ -263,11 +263,15 @@
         let selectedFile = null;
         let supabase = null;
 
-        // ดึงค่า Config เก่าจากเครื่องผู้ใช้มาใส่ให้ช่องอินพุตอัตโนมัติ
-        document.getElementById('supabase-url').value = localStorage.getItem('sb_url') || '';
-        document.getElementById('supabase-key').value = localStorage.getItem('sb_key') || '';
+        // ดึงค่าเชื่อมต่อเดิมจาก LocalStorage (ถ้ามี) หากไม่มีจะใช้ค่าเริ่มต้นในกล่องอินพุต
+        if (localStorage.getItem('sb_url')) {
+            document.getElementById('supabase-url').value = localStorage.getItem('sb_url');
+        }
+        if (localStorage.getItem('sb_key')) {
+            document.getElementById('supabase-key').value = localStorage.getItem('sb_key');
+        }
 
-        // เชื่อมต่อ Supabase
+        // เชื่อมต่อ Supabase (แก้ไข Bug จากคำเดิมเรียบร้อย)
         function initSupabase() {
             const url = document.getElementById('supabase-url').value.trim();
             const key = document.getElementById('supabase-key').value.trim();
@@ -280,7 +284,8 @@
             localStorage.setItem('sb_url', url);
             localStorage.setItem('sb_key', key);
             
-            supabase = supabaseJS.createClient(url, key);
+            // แก้ไข Bug: เปลี่ยนจาก supabaseJS เป็น supabase ให้ตรงตาม Library v2
+            supabase = supabase.createClient(url, key);
             return true;
         }
 
@@ -316,36 +321,34 @@
             uploadStatus.innerText = "กำลังอัปโหลดไฟล์เข้าระบบ...";
 
             try {
-                // 1. สุ่มรหัส 6 หลัก
                 const code = Math.floor(100000 + Math.random() * 900000).toString();
                 const safeFileName = selectedFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
                 const storagePath = `${code}/${safeFileName}`;
 
-                // 2. อัปโหลดเข้า Storage Bucket ชื่อ 'drops'
+                // อัปโหลดเข้า Storage Bucket ชื่อ 'drops'
                 const { data: storageData, error: storageError } = await supabase.storage
                     .from('drops')
                     .upload(storagePath, selectedFile, { cacheControl: '3600', upsert: true });
 
                 if (storageError) throw storageError;
 
-                // 3. ดึง Public URL ของไฟล์ออกมาชั่วคราว
+                // ดึง Public URL ของไฟล์
                 const { data: urlData } = supabase.storage.from('drops').getPublicUrl(storagePath);
                 const fileUrl = urlData.publicUrl;
 
-                // 4. บันทึกโค้ดและลิงก์ลงฐานข้อมูลตาราง 'files'
+                // บันทึกข้อมูลโค้ดลงตาราง 'files'
                 const { error: dbError } = await supabase
                     .from('files')
                     .insert([{ code: code, file_url: fileUrl, file_name: selectedFile.name }]);
 
                 if (dbError) throw dbError;
 
-                // อัปโหลดสำเร็จ -> แสดงเลข 6 หลักให้ผู้ใช้เอาไปกรอก
+                // อัปโหลดสำเร็จ -> แสดงเลข 6 หลัก
                 generatedCode.innerText = code;
                 codeContainer.style.display = 'block';
                 uploadStatus.className = "status-msg status-success";
                 uploadStatus.innerText = "อัปโหลดเสร็จสมบูรณ์!";
                 
-                // เคลียร์ค่าหน้าฟอร์ม
                 selectedFile = null;
                 fileInfo.style.display = 'none';
                 dropText.innerText = "📁 ลากไฟล์มาวางที่นี่ หรือ คลิกเพื่อเลือกไฟล์";
@@ -372,7 +375,7 @@
             downloadStatus.innerText = "กำลังตรวจสอบรหัสและค้นหาไฟล์...";
 
             try {
-                // ค้นหาโค้ดโดยเช็กว่าเวลาสร้าง (created_at) ต้องไม่เกิน 15 นาทีที่ผ่านมา
+                // เช็กเวลาสร้างไม่ให้เกิน 15 นาทีที่ผ่านมา
                 const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
                 
                 const { data, error } = await supabase
@@ -389,7 +392,6 @@
                     downloadStatus.className = "status-msg status-success";
                     downloadStatus.innerText = "พบไฟล์! กำลังเปิดหน้าต่างดาวน์โหลด...";
                     
-                    // สั่งให้เบราว์เซอร์เปิดดาวน์โหลดไฟล์นั้นทันที
                     const link = document.createElement('a');
                     link.href = record.file_url;
                     link.download = record.file_name;
