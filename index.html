@@ -63,7 +63,7 @@
         .file-drop-area {
             border: 2px dashed #444444;
             border-radius: 6px;
-            padding: 40px 20px;
+            padding: 50px 20px;
             text-align: center;
             cursor: pointer;
             background-color: #151515;
@@ -74,7 +74,7 @@
             border-color: #ff3333;
             background-color: #1a1212;
         }
-        /* แก้ไขเพื่อให้สามารถคลิกทะลุไปโดนตัวเลือกไฟล์ได้แน่นอน */
+        /* ซ่อนหน้าตาของ Input ดั้งเดิม แต่ขยายให้เต็มพื้นที่เพื่อรับแรงคลิก */
         .file-input {
             position: absolute;
             top: 0;
@@ -83,6 +83,7 @@
             height: 100%;
             opacity: 0;
             cursor: pointer;
+            z-index: 10;
         }
         .btn {
             display: block;
@@ -136,6 +137,15 @@
             letter-spacing: 2px;
             text-align: center;
             padding: 10px;
+            width: 100%;
+            background-color: #111111;
+            border: 1px solid #444444;
+            border-radius: 6px;
+            color: #ffffff;
+        }
+        .receive-input-wrapper input:focus {
+            border-color: #ff3333;
+            outline: none;
         }
         .receive-btn-cell {
             width: 30%;
@@ -172,7 +182,7 @@
             <div class="code-display" id="code-container">
                 <div style="font-size: 14px; color: #aaa;">รหัสรับไฟล์ของคุณคือ</div>
                 <div class="code-number" id="generated-code">000000</div>
-                <div style="font-size: 12px; color: #888;">นำรหัสนี้ไปกรอกที่คอมพิวเตอร์เพื่อดาวน์โหลดไฟล์<br><span class="highlight">(หมดอายุใน 15 นาที)</span></div>
+                <div style="font-size: 12px; color: #888;">นำรหัสนี้ไปกรอกที่อุปกรณ์ปลายทางเพื่อดาวน์โหลดไฟล์<br><span class="highlight">(หมดอายุใน 15 นาที)</span></div>
             </div>
             <div class="status-msg" id="upload-status"></div>
         </div>
@@ -193,7 +203,7 @@
     </div>
 
     <script>
-        // ฝังรหัสเชื่อมต่อ Supabase ของคุณไว้ที่นี่โดยตรง ปลอดภัยและสะดวกที่สุด
+        // กำหนดค่าการเชื่อมต่อของโปรเจกต์ Supabase ของคุณแบบถาวร
         const SUPABASE_URL = "https://hsbxobbvxvakrtbqhvgx.supabase.co";
         const SUPABASE_KEY = "sb_publishable_BiO61FeG7BuQaV8UuRqxGQ_0uMWR05p";
 
@@ -210,29 +220,31 @@
         const downloadStatus = document.getElementById('download-status');
 
         let selectedFile = null;
-        let supabase = null;
+        let supabaseClient = null;
 
-        // ฟังก์ชันเริ่มเชื่อมต่อฐานข้อมูลโดยดึงจากค่าคงที่ด้านบนอัตโนมัติ
+        // เรียกใช้งานตัวจัดการ Client ของ Supabase
         function initSupabase() {
-            if (!supabase) {
-                supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+            if (!supabaseClient) {
+                // แก้ไขใช้คำสั่งที่ถูกต้องตามมาตรฐาน Supabase JS v2
+                supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
             }
-            return true;
+            return supabaseClient;
         }
 
-        // จัดการเหตุการณ์เมื่อคลิกหรือเปลี่ยนไฟล์
+        // จัดการเมื่อกดเลือกไฟล์ผ่านหน้าต่างปกติ
         fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
+            if (e.target.files && e.target.files.length > 0) {
                 handleFileSelection(e.target.files[0]);
             }
         });
 
-        // จัดการระบบลากและวางไฟล์ (Drag and Drop) ป้องกันเบราว์เซอร์เปิดหน้าต่างใหม่
-        window.addEventListener('dragover', (e) => e.preventDefault());
-        window.addEventListener('drop', (e) => e.preventDefault());
+        // จัดการระบบลากวาง (Drag & Drop) ป้องกันการเปิดไฟล์ทับเบราว์เซอร์ดั้งเดิม
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            window.addEventListener(eventName, (e) => e.preventDefault(), false);
+            dropArea.addEventListener(eventName, (e) => e.preventDefault(), false);
+        });
 
-        dropArea.addEventListener('dragover', (e) => { 
-            e.preventDefault(); 
+        dropArea.addEventListener('dragover', () => { 
             dropArea.classList.add('dragover'); 
         });
         
@@ -241,64 +253,69 @@
         });
         
         dropArea.addEventListener('drop', (e) => {
-            e.preventDefault();
             dropArea.classList.remove('dragover');
-            if (e.dataTransfer.files.length > 0) {
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
                 handleFileSelection(e.dataTransfer.files[0]);
+                fileInput.files = e.dataTransfer.files; // ซิงค์กิ้งข้อมูลไฟล์
             }
         });
 
+        // ฟังก์ชันอัปเดต UI เมื่อระบบได้รับไฟล์แล้ว
         function handleFileSelection(file) {
             if (!file) return;
             selectedFile = file;
             dropText.innerText = "เปลี่ยนไฟล์ที่เลือก";
             fileInfo.innerText = `ไฟล์ที่เลือก: ${file.name} (${(file.size / (1024 * 1024)).toFixed(2)} MB)`;
             fileInfo.style.display = 'block';
+            
+            // เปิดใช้งานปุ่มอัปโหลดทันที (เปลี่ยนเป็นสีแดงกดได้)
             uploadBtn.disabled = false;
             codeContainer.style.display = 'none';
             uploadStatus.innerHTML = '';
         }
 
-        // ลоจิกการอัปโหลดไฟล์
+        // ลอจิกการอัปโหลดไฟล์ไปที่ Supabase Storage และเขียน DB
         uploadBtn.addEventListener('click', async () => {
             if (!selectedFile) return;
-            initSupabase();
+            const client = initSupabase();
 
             uploadBtn.disabled = true;
             uploadStatus.className = "status-msg status-loading";
             uploadStatus.innerText = "กำลังอัปโหลดไฟล์เข้าระบบ...";
 
             try {
+                // 1. สุ่มรหัส 6 หลักและตั้งชื่อไฟล์ปลอดภัย
                 const code = Math.floor(100000 + Math.random() * 900000).toString();
                 const safeFileName = selectedFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
                 const storagePath = `${code}/${safeFileName}`;
 
-                // อัปโหลดเข้า Storage Bucket
-                const { data: storageData, error: storageError } = await supabase.storage
+                // 2. ส่งไฟล์เข้า Storage Bucket 'drops'
+                const { data: storageData, error: storageError } = await client.storage
                     .from('drops')
                     .upload(storagePath, selectedFile, { cacheControl: '3600', upsert: true });
 
                 if (storageError) throw storageError;
 
-                // ดึง Public URL ของไฟล์
-                const { data: urlData } = supabase.storage.from('drops').getPublicUrl(storagePath);
+                // 3. ขอลิงก์ดาวน์โหลด (Public URL)
+                const { data: urlData } = client.storage.from('drops').getPublicUrl(storagePath);
                 const fileUrl = urlData.publicUrl;
 
-                // บันทึกข้อมูลโค้ดลงฐานข้อมูล
-                const { error: dbError } = await supabase
+                // 4. บันทึกความสัมพันธ์รหัสกับลิงก์ลงฐานข้อมูลตาราง 'files'
+                const { error: dbError } = await client
                     .from('files')
                     .insert([{ code: code, file_url: fileUrl, file_name: selectedFile.name }]);
 
                 if (dbError) throw dbError;
 
-                // อัปโหลดสำเร็จ -> แสดงเลข 6 หลัก
+                // ทำงานเสร็จสิ้น -> โชว์รหัส 6 หลัก
                 generatedCode.innerText = code;
                 codeContainer.style.display = 'block';
                 uploadStatus.className = "status-msg status-success";
                 uploadStatus.innerText = "อัปโหลดเสร็จสมบูรณ์!";
                 
+                // รีเซ็ตเคลียร์หน้าเว็บ
                 selectedFile = null;
-                fileInput.value = ''; // รีเซ็ตอินพุตไฟล์
+                fileInput.value = '';
                 fileInfo.style.display = 'none';
                 dropText.innerText = "📁 ลากไฟล์มาวางที่นี่ หรือ คลิกเพื่อเลือกไฟล์";
 
@@ -310,23 +327,24 @@
             }
         });
 
-        // ลอจิกการดาวน์โหลดไฟล์
+        // ลอจิกดาวน์โหลดไฟล์เมื่อกรอกรหัสครบ 6 หลัก
         downloadBtn.addEventListener('click', async () => {
             const code = codeInput.value.trim();
             if (code.length !== 6) {
                 alert('กรุณากรอกรหัสรับไฟล์ให้ครบ 6 หลัก');
                 return;
             }
-            initSupabase();
+            const client = initSupabase();
 
             downloadBtn.disabled = true;
             downloadStatus.className = "status-msg status-loading";
             downloadStatus.innerText = "กำลังตรวจสอบรหัสและค้นหาไฟล์...";
 
             try {
+                // ค้นหาข้อมูลโดยเช็กเวลาปัจจุบันหักย้อนหลังไปไม่เกิน 15 นาที
                 const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
                 
-                const { data, error } = await supabase
+                const { data, error } = await client
                     .from('files')
                     .select('file_url, file_name')
                     .eq('code', code)
@@ -338,8 +356,9 @@
                 if (data && data.length > 0) {
                     const record = data[0];
                     downloadStatus.className = "status-msg status-success";
-                    downloadStatus.innerText = "พบไฟล์! กำลังเปิดหน้าต่างดาวน์โหลด...";
+                    downloadStatus.innerText = "พบไฟล์! กำลังดาวน์โหลด...";
                     
+                    // สั่งดาวน์โหลดลงเครื่องผ่านสคริปต์ลิงก์เสมือน
                     const link = document.createElement('a');
                     link.href = record.file_url;
                     link.download = record.file_name;
